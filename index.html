@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Switch Tracker</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- 添加清除缓存的脚本 -->
+    <script>
+        // 清除缓存
+        localStorage.removeItem('gameData');
+        localStorage.removeItem('lastUpdated');
+        console.log('已清除本地缓存');
+    </script>
+</head>
+<body>
+    <!-- 添加loading指示器 -->
+    <div id="loading-indicator" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(255,255,255,0.8); z-index: 1000; justify-content: center; align-items: center;">
+        <div style="text-align: center; background-color: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 30px rgba(0,0,0,0.15);">
+            <div style="width: 50px; height: 50px; border: 4px solid #f3f3f3; border-top: 4px solid #e60012; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 15px;"></div>
+            <div style="font-weight: 500; font-size: 16px;">数据加载中...</div>
+        </div>
+    </div>
+    <style>
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+
+    <div class="container">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <img src="https://www.nintendo.com/favicon.ico" alt="Switch Logo" class="logo">
+                <h1>Switch Tracker</h1>
+            </div>
+            <nav>
+                <ul>
+                    <li class="active" data-tab="overview"><i class="fas fa-home"></i> 总览</li>
+                    <li data-tab="recent"><i class="fas fa-history"></i> 最近游玩</li>
+                    <li data-tab="games"><i class="fas fa-gamepad"></i> 游戏列表</li>
+                    <li data-tab="calendar"><i class="fas fa-calendar-alt"></i> 游戏日历</li>
+                </ul>
+            </nav>
+            <div class="user-info">
+                <p>上次更新: <span id="last-updated"></span></p>
+                <button id="clear-cache">清除缓存</button>
+            </div>
+        </div>
+        
+        <main>
+            <section id="overview" class="tab-content active">
+                <div class="section-decoration"></div>
+                <div class="section-header">
+                    <h2>游戏总览</h2>
+                    <div class="controls">
+                        <button id="refresh-data"><i class="fas fa-sync-alt"></i> 刷新数据</button>
+                    </div>
+                </div>
+                
+                <div class="cards-container">
+                    <div class="card">
+                        <h3>总游戏数</h3>
+                        <p class="big-number" id="total-games">0</p>
+                        <span class="card-icon"><i class="fas fa-gamepad"></i></span>
+                    </div>
+                    <div class="card">
+                        <h3>总游玩时间</h3>
+                        <p class="big-number" id="total-playtime">0小时</p>
+                        <span class="card-icon"><i class="fas fa-clock"></i></span>
+                    </div>
+                    <div class="card">
+                        <h3>最常玩的游戏</h3>
+                        <div class="most-played-info">
+                            <p id="most-played-game" class="most-played-name">-</p>
+                            <p id="most-played-time" class="most-played-time">0小时</p>
+                        </div>
+                        <span class="card-icon"><i class="fas fa-trophy"></i></span>
+                    </div>
+                </div>
+
+                <!-- 添加本周本月统计卡片 -->
+                <div class="time-period-stats">
+                    <div class="period-card">
+                        <div class="period-icon"><i class="fas fa-calendar-week"></i></div>
+                        <div class="period-content">
+                            <div class="period-title">本周游玩</div>
+                            <div class="period-value" id="current-week-time">0小时</div>
+                        </div>
+                    </div>
+                    <div class="period-card">
+                        <div class="period-icon"><i class="fas fa-calendar-alt"></i></div>
+                        <div class="period-content">
+                            <div class="period-title">本月游玩</div>
+                            <div class="period-value" id="current-month-time">0小时</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="overview-content">
+                    <div class="chart-wrapper">
+                        <h3><i class="fas fa-chart-pie"></i> 最近游玩时间分布</h3>
+                        <canvas id="playtime-chart"></canvas>
+                    </div>
+                    
+                    <div class="recent-activity-section">
+                        <h3><i class="fas fa-history"></i> 最近活动</h3>
+                        <div id="recent-activity" class="activity-list"></div>
+                    </div>
+                </div>
+
+                <!-- 添加月度游玩时间图表 -->
+                <div class="section-subheader">
+                    <h3><i class="fas fa-chart-line"></i> 每月游玩时间</h3>
+                </div>
+                <div class="monthly-chart-wrapper">
+                    <canvas id="monthly-chart"></canvas>
+                </div>
+                
+                <!-- 添加游玩时间最长的游戏图表 -->
+                <div class="section-subheader">
+                    <h3><i class="fas fa-trophy"></i> 游玩时间最长的游戏</h3>
+                </div>
+                <div class="top-games-chart-wrapper">
+                    <canvas id="top-games-chart"></canvas>
+                </div>
+            </section>
+            
+            <section id="recent" class="tab-content">
+                <div class="section-header">
+                    <h2>最近游玩</h2>
+                </div>
+                <div id="recent-tab-content" class="recent-content"></div>
+            </section>
+            
+            <section id="calendar" class="tab-content">
+                <div class="section-header">
+                    <h2>游戏日历</h2>
+                    <div class="controls">
+                        <button id="prev-month"><i class="fas fa-chevron-left"></i></button>
+                        <span id="calendar-title">2025年4月</span>
+                        <button id="next-month"><i class="fas fa-chevron-right"></i></button>
+                    </div>
+                </div>
+                <div class="calendar-container">
+                    <div class="calendar-header">
+                        <div class="weekday">周日</div>
+                        <div class="weekday">周一</div>
+                        <div class="weekday">周二</div>
+                        <div class="weekday">周三</div>
+                        <div class="weekday">周四</div>
+                        <div class="weekday">周五</div>
+                        <div class="weekday">周六</div>
+                    </div>
+                    <div id="calendar-grid" class="calendar-grid"></div>
+                </div>
+                
+                <div class="calendar-legend">
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: rgba(220, 220, 220, 0.5);"></div>
+                        <span>无游玩记录</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: rgba(75, 192, 192, 0.3);"></div>
+                        <span>&lt; 1小时</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: rgba(75, 192, 192, 0.5);"></div>
+                        <span>1-2小时</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: rgba(75, 192, 192, 0.7);"></div>
+                        <span>2-3小时</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: rgba(75, 192, 192, 0.9);"></div>
+                        <span>&gt; 3小时</span>
+                    </div>
+                </div>
+                
+                <div id="day-details" class="day-details">
+                    <h3 id="detail-date">2025年4月26日的游戏记录</h3>
+                    <div id="detail-games" class="detail-games-container"></div>
+                </div>
+            </section>
+            
+            <section id="games" class="tab-content">
+                <div class="section-header">
+                    <h2>游戏列表</h2>
+                    <div class="controls">
+                        <input type="text" id="game-search" placeholder="搜索游戏...">
+                        <select id="sort-games">
+                            <option value="playtime">按游玩时间排序</option>
+                            <option value="recent">按最近游玩排序</option>
+                            <option value="name">按名称排序</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="games-grid" id="games-grid"></div>
+            </section>
+        </main>
+    </div>
+    
+    <script src="script.js"></script>
+    
+    <!-- 调试脚本 -->
+    <script>
+        // 添加调试功能，直接从API获取数据并在控制台显示
+        console.log('开始调试');
+        
+        // 确保API请求绝对路径
+        const baseUrl = window.location.origin;
+        
+        // 测试直接从API获取数据
+        Promise.all([
+            fetch(`${baseUrl}/api/games`).then(response => {
+                if (!response.ok) throw new Error(`Games API 错误: ${response.status}`);
+                return response.json();
+            }),
+            fetch(`${baseUrl}/api/recent_activities`).then(response => {
+                if (!response.ok) throw new Error(`Activities API 错误: ${response.status}`);
+                return response.json();
+            }),
+            fetch(`${baseUrl}/api/history`).then(response => {
+                if (!response.ok) throw new Error(`History API 错误: ${response.status}`);
+                return response.json();
+            }),
+            fetch(`${baseUrl}/api/monthly_playtime`).then(response => {
+                if (!response.ok) throw new Error(`Monthly API 错误: ${response.status}`);
+                return response.json();
+            })
+        ])
+        .then(([gamesData, recentData, historyData, monthlyData]) => {
+            console.log('API调试请求成功');
+            console.log('游戏数据:', gamesData);
+            console.log('最近活动:', recentData);
+            console.log('历史数据:', historyData);
+            console.log('月度统计:', monthlyData);
+            
+            // 不再强制刷新，让正常的数据加载流程自行运行
+            // document.getElementById('refresh-data').click();
+        })
+        .catch(error => {
+            console.error('API调试请求失败:', error);
+        });
+    </script>
+    
+    <!-- 添加清除缓存的事件监听器 -->
+    <script>
+        document.getElementById('clear-cache').addEventListener('click', function() {
+            localStorage.removeItem('gameData');
+            localStorage.removeItem('lastUpdated');
+            alert('缓存已清除，页面将重新加载');
+            location.reload();
+        });
+    </script>
+</body>
+</html> 

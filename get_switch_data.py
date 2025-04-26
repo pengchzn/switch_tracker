@@ -5,7 +5,8 @@ import hashlib
 import re
 import sys
 import os
-from datetime import datetime
+import sqlite3
+from datetime import datetime, timedelta
 import time
 import logging
 
@@ -19,6 +20,183 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger("switch_tracker")
+
+# 数据库配置
+DB_FILE = 'switch_tracker.db'
+
+def init_database():
+    """初始化数据库表结构"""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        
+        # 创建游戏表 - 存储游戏基本信息
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS games (
+            title_id TEXT PRIMARY KEY,
+            title_name TEXT NOT NULL,
+            image_url TEXT,
+            device_type TEXT,
+            chinese_name TEXT
+        )
+        ''')
+        
+        # 创建游戏历史记录表 - 存储每次获取的游戏总时长
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS game_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title_id TEXT NOT NULL,
+            first_played_at TEXT,
+            last_played_at TEXT,
+            total_played_days INTEGER,
+            total_played_minutes INTEGER,
+            collected_at TEXT NOT NULL,
+            FOREIGN KEY (title_id) REFERENCES games (title_id)
+        )
+        ''')
+        
+        # 创建每日游玩记录表 - 存储每天的游玩记录
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS daily_play (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title_id TEXT NOT NULL,
+            played_date TEXT NOT NULL,
+            played_minutes INTEGER NOT NULL,
+            collected_at TEXT NOT NULL,
+            FOREIGN KEY (title_id) REFERENCES games (title_id)
+        )
+        ''')
+        
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        logger.error(f"初始化数据库失败: {str(e)}")
+        return False
+
+def save_to_database(data):
+    """将游戏数据保存到数据库中"""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        
+        # 当前时间作为数据收集时间
+        collected_at = datetime.now().isoformat()
+        
+        # 保存游戏基本信息
+        for game in data.get('playHistories', []):
+            # 插入或更新游戏记录
+            cursor.execute('''
+            INSERT OR REPLACE INTO games (title_id, title_name, image_url, device_type)
+            VALUES (?, ?, ?, ?)
+            ''', (
+                game.get('titleId'), 
+                game.get('titleName'), 
+                game.get('imageUrl'),
+                game.get('deviceType')
+            ))
+            
+            # 保存游戏历史记录
+            cursor.execute('''
+            INSERT INTO game_history (
+                title_id, first_played_at, last_played_at, 
+                total_played_days, total_played_minutes, collected_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ''', (
+                game.get('titleId'),
+                game.get('firstPlayedAt'),
+                game.get('lastPlayedAt'),
+                game.get('totalPlayedDays'),
+                game.get('totalPlayedMinutes'),
+                collected_at
+            ))
+        
+        # 保存每日游玩记录
+        for day_record in data.get('recentPlayHistories', []):
+            played_date = day_record.get('playedDate')
+            
+            for game in day_record.get('dailyPlayHistories', []):
+                # 只保存有游玩时间的记录
+                if game.get('totalPlayedMinutes', 0) > 0:
+                    cursor.execute('''
+                    INSERT INTO daily_play (title_id, played_date, played_minutes, collected_at)
+                    VALUES (?, ?, ?, ?)
+                    ''', (
+                        game.get('titleId'),
+                        played_date,
+                        game.get('totalPlayedMinutes'),
+                        collected_at
+                    ))
+        
+        conn.commit()
+        
+        # 更新现有游戏的中文名称（如果有翻译）
+        cursor.execute('''
+        UPDATE games 
+        SET chinese_name = (
+            SELECT t.chinese_name 
+            FROM game_translations t 
+            WHERE t.title_id = games.title_id
+        )
+        WHERE EXISTS (
+            SELECT 1 
+            FROM game_translations t 
+            WHERE t.title_id = games.title_id
+        )
+        ''')
+        
+        # 检查是否有未翻译的游戏
+        cursor.execute('''
+        SELECT COUNT(*) 
+        FROM games 
+        WHERE chinese_name IS NULL OR chinese_name = ''
+        ''')
+        untranslated_count = cursor.fetchone()[0]
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"数据已成功保存到数据库")
+        
+        # 打印信息并检查未翻译的游戏
+        if untranslated_count > 0:
+            print(f"发现 {untranslated_count} 个未翻译的游戏，可以运行 'python game_translation.py' 导出并翻译")
+        
+        return True
+    except Exception as e:
+        logger.error(f"保存数据到数据库失败: {str(e)}")
+        return False
+
+def get_game_list_with_cn_names():
+    """获取游戏列表，优先使用中文名称"""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+        SELECT title_id, 
+               CASE WHEN chinese_name IS NOT NULL AND chinese_name != '' 
+                    THEN chinese_name 
+                    ELSE title_name 
+               END AS display_name,
+               total_played_days
+        FROM games
+        JOIN (
+            SELECT title_id, MAX(total_played_days) as total_played_days
+            FROM game_history
+            GROUP BY title_id
+        ) h ON games.title_id = h.title_id
+        ORDER BY total_played_days DESC
+        LIMIT 10
+        ''')
+        
+        games = cursor.fetchall()
+        conn.close()
+        
+        return games
+    except Exception as e:
+        logger.error(f"获取游戏列表失败: {str(e)}")
+        return []
 
 class nsession:
  
@@ -299,20 +477,27 @@ class nsession:
                     filename = f'history_{timestamp}.json'
                     filepath = os.path.join(save_dir, filename)
                     
-                    # 保存数据
+                    # 获取响应数据
+                    data = r.json()
+                    
+                    # 保存数据到JSON文件
                     with open(filepath, 'w', encoding='utf-8') as f:
-                        json.dump(r.json(), f, ensure_ascii=False, indent=2)
+                        json.dump(data, f, ensure_ascii=False, indent=2)
                     print(f"历史记录已保存到: {filepath}")
                     
-                    # 打印简要信息
-                    data = r.json()
-                    if 'playHistories' in data:
-                        history_count = len(data['playHistories'])
+                    # 保存数据到数据库
+                    if save_to_database(data):
+                        print("数据已成功保存到数据库")
+                    else:
+                        print("保存数据到数据库失败")
+                    
+                    # 打印简要信息（优先使用中文名称）
+                    games = get_game_list_with_cn_names()
+                    if games:
+                        history_count = len(games)
                         print(f"\n共找到 {history_count} 条游戏记录")
-                        for i, game in enumerate(data['playHistories'][:5]):  # 显示前5条记录
-                            game_name = game.get('titleName', '未知游戏')
-                            days = game.get('totalPlayedDays', 0)
-                            print(f"- {game_name}: {days} 天")
+                        for i, (title_id, display_name, days) in enumerate(games[:5]):  # 显示前5条记录
+                            print(f"- {display_name}: {days} 天")
                 except Exception as e:
                     logger.error(f"保存历史记录失败: {str(e)}")
                     print(f"保存历史记录失败: {str(e)}")
@@ -340,6 +525,12 @@ class nsession:
 def main():
     try:
         print("Nintendo Switch 游戏记录追踪工具")
+        
+        # 初始化数据库
+        if not init_database():
+            print("初始化数据库失败，程序将退出")
+            return
+            
         ns = nsession()
         
         # 修改逻辑：先检查是否有session_token（长期有效），无论access_token是否有效
