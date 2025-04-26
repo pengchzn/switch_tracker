@@ -24,15 +24,30 @@ def init_translation_table():
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         
-        # 创建游戏翻译表
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS game_translations (
-            title_id TEXT PRIMARY KEY,
-            japanese_name TEXT NOT NULL,
-            chinese_name TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )
-        ''')
+        # 检查游戏翻译表是否存在
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='game_translations'")
+        table_exists = cursor.fetchone() is not None
+        
+        if table_exists:
+            # 检查updated_at列是否存在
+            cursor.execute("PRAGMA table_info(game_translations)")
+            columns = [col[1] for col in cursor.fetchall()]
+            
+            if 'updated_at' not in columns:
+                # 添加缺少的updated_at列
+                cursor.execute('ALTER TABLE game_translations ADD COLUMN updated_at TEXT')
+                logger.info("已向game_translations表添加updated_at字段")
+        else:
+            # 创建游戏翻译表
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS game_translations (
+                title_id TEXT PRIMARY KEY,
+                japanese_name TEXT NOT NULL,
+                chinese_name TEXT NOT NULL,
+                updated_at TEXT
+            )
+            ''')
+            logger.info("已创建game_translations表")
         
         # 添加中文名称字段到games表（如果不存在）
         cursor.execute("PRAGMA table_info(games)")
@@ -160,15 +175,29 @@ def import_translations_from_csv():
         import datetime
         now = datetime.datetime.now().isoformat()
         
-        # 更新翻译表
-        for title_id, jp_name, cn_name in translations:
-            cursor.execute('''
-            INSERT OR REPLACE INTO game_translations 
-            (title_id, japanese_name, chinese_name, updated_at)
-            VALUES (?, ?, ?, ?)
-            ''', (title_id, jp_name, cn_name, now))
-            
-            # 同时更新games表中的chinese_name
+        # 检查updated_at列是否存在
+        cursor.execute("PRAGMA table_info(game_translations)")
+        columns = [col[1] for col in cursor.fetchall()]
+        
+        if 'updated_at' in columns:
+            # 如果有updated_at列，使用完整的SQL
+            for title_id, jp_name, cn_name in translations:
+                cursor.execute('''
+                INSERT OR REPLACE INTO game_translations 
+                (title_id, japanese_name, chinese_name, updated_at)
+                VALUES (?, ?, ?, ?)
+                ''', (title_id, jp_name, cn_name, now))
+        else:
+            # 如果没有updated_at列，跳过该字段
+            for title_id, jp_name, cn_name in translations:
+                cursor.execute('''
+                INSERT OR REPLACE INTO game_translations 
+                (title_id, japanese_name, chinese_name)
+                VALUES (?, ?, ?)
+                ''', (title_id, jp_name, cn_name))
+        
+        # 同时更新games表中的chinese_name
+        for title_id, _, cn_name in translations:
             cursor.execute('''
             UPDATE games SET chinese_name = ? WHERE title_id = ?
             ''', (cn_name, title_id))

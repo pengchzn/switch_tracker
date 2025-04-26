@@ -42,28 +42,29 @@
 
 ## 使用说明
 
-### 获取游戏数据
+### 初始化与获取游戏数据
+
+程序的正确启动顺序如下：
 
 ```bash
+# 第一步：初始化数据库并获取游戏数据
 python get_switch_data.py
-```
 
-首次运行时，程序会引导您登录Nintendo账号并授权访问。成功授权后，会保存令牌用于后续使用。
-
-### 游戏名称翻译
-
-由于Nintendo返回的游戏名称通常为日文或英文，您可以使用翻译工具将其转换为中文：
-
-```bash
+# 第二步：如果需要翻译游戏名称，导出翻译文件
 # 导出未翻译的游戏到CSV文件
 python game_translation.py export
 
-# 在编辑CSV文件添加翻译后，导入翻译
+# 编辑CSV文件添加中文名称后，导入翻译
 python game_translation.py import
 
 # 应用翻译到现有游戏
 python game_translation.py apply
+
+# 第三步：运行Web服务器
+python server.py
 ```
+
+首次运行时，程序会引导您登录Nintendo账号并授权访问。成功授权后，会保存令牌用于后续使用。
 
 CSV文件(`game_translations.csv`)格式示例：
 
@@ -101,6 +102,12 @@ python server.py
 - `game_history` - 游戏历史记录和总游戏时间
 - `daily_play` - 每日游玩记录
 - `game_translations` - 游戏名称翻译
+
+## 技术栈
+
+- **后端**：Python, Flask, SQLite
+- **前端**：HTML, CSS, JavaScript, Chart.js
+- **数据获取**：Nintendo Switch Parental Controls API
 
 ## 贡献
 
