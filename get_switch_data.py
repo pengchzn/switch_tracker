@@ -67,6 +67,15 @@ def init_database():
         )
         ''')
         
+        # 创建游戏翻译表 - 如果不存在
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS game_translations (
+            title_id TEXT PRIMARY KEY,
+            japanese_name TEXT,
+            chinese_name TEXT
+        )
+        ''')
+        
         conn.commit()
         conn.close()
         return True
@@ -130,38 +139,57 @@ def save_to_database(data):
         
         conn.commit()
         
-        # 更新现有游戏的中文名称（如果有翻译）
+        # 检查game_translations表是否存在，不存在则创建
         cursor.execute('''
-        UPDATE games 
-        SET chinese_name = (
-            SELECT t.chinese_name 
-            FROM game_translations t 
-            WHERE t.title_id = games.title_id
-        )
-        WHERE EXISTS (
-            SELECT 1 
-            FROM game_translations t 
-            WHERE t.title_id = games.title_id
-        )
+        SELECT name FROM sqlite_master WHERE type='table' AND name='game_translations'
         ''')
+        if not cursor.fetchone():
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS game_translations (
+                title_id TEXT PRIMARY KEY,
+                japanese_name TEXT,
+                chinese_name TEXT
+            )
+            ''')
+            conn.commit()
+            logger.info("创建了game_translations表")
         
-        # 检查是否有未翻译的游戏
-        cursor.execute('''
-        SELECT COUNT(*) 
-        FROM games 
-        WHERE chinese_name IS NULL OR chinese_name = ''
-        ''')
-        untranslated_count = cursor.fetchone()[0]
+        # 尝试更新中文名称，如果表存在
+        try:
+            cursor.execute('''
+            UPDATE games 
+            SET chinese_name = (
+                SELECT t.chinese_name 
+                FROM game_translations t 
+                WHERE t.title_id = games.title_id
+            )
+            WHERE EXISTS (
+                SELECT 1 
+                FROM game_translations t 
+                WHERE t.title_id = games.title_id
+            )
+            ''')
+            
+            # 检查是否有未翻译的游戏
+            cursor.execute('''
+            SELECT COUNT(*) 
+            FROM games 
+            WHERE chinese_name IS NULL OR chinese_name = ''
+            ''')
+            untranslated_count = cursor.fetchone()[0]
+            
+            conn.commit()
+            
+            # 打印信息并检查未翻译的游戏
+            if untranslated_count > 0:
+                print(f"发现 {untranslated_count} 个未翻译的游戏，可以运行 'python game_translation.py' 导出并翻译")
+            
+        except Exception as e:
+            logger.warning(f"更新中文名称时出错: {str(e)}")
+            # 错误不中断程序流程，继续执行
         
-        conn.commit()
         conn.close()
-        
         logger.info(f"数据已成功保存到数据库")
-        
-        # 打印信息并检查未翻译的游戏
-        if untranslated_count > 0:
-            print(f"发现 {untranslated_count} 个未翻译的游戏，可以运行 'python game_translation.py' 导出并翻译")
-        
         return True
     except Exception as e:
         logger.error(f"保存数据到数据库失败: {str(e)}")
@@ -173,20 +201,31 @@ def get_game_list_with_cn_names():
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         
+        # 确保表存在
+        tables_needed = ['games', 'game_history']
+        for table in tables_needed:
+            cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table}'")
+            if not cursor.fetchone():
+                logger.warning(f"表 {table} 不存在，将创建")
+                init_database()
+                # 如果刚创建表，可能还没有数据
+                return []
+        
+        # 使用明确的表名前缀避免歧义
         cursor.execute('''
-        SELECT title_id, 
-               CASE WHEN chinese_name IS NOT NULL AND chinese_name != '' 
-                    THEN chinese_name 
-                    ELSE title_name 
+        SELECT games.title_id, 
+               CASE WHEN games.chinese_name IS NOT NULL AND games.chinese_name != '' 
+                    THEN games.chinese_name 
+                    ELSE games.title_name 
                END AS display_name,
-               total_played_days
+               h.total_played_days
         FROM games
         JOIN (
             SELECT title_id, MAX(total_played_days) as total_played_days
             FROM game_history
             GROUP BY title_id
         ) h ON games.title_id = h.title_id
-        ORDER BY total_played_days DESC
+        ORDER BY h.total_played_days DESC
         LIMIT 10
         ''')
         

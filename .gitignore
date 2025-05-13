@@ -44,3 +44,4 @@ ENV/
 *.tmp
 *.swp
 *.swo 
+*.pid
