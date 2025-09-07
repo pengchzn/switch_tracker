@@ -1,5 +1,43 @@
 // 全局变量
 let gameData = null;
+const DEFAULT_IMAGE_URL = '/static/default-game.svg';
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+}
+
+function safeImageUrl(value) {
+    if (!value) return DEFAULT_IMAGE_URL;
+    try {
+        const url = new URL(value, window.location.origin);
+        if (url.protocol === 'https:' || url.origin === window.location.origin) {
+            return url.href;
+        }
+    } catch (_) {
+        // Invalid or unsafe URLs fall back to a local placeholder.
+    }
+    return DEFAULT_IMAGE_URL;
+}
+
+function parseLocalDate(value) {
+    const match = String(value ?? '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+        return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    }
+    return new Date(value);
+}
+
+function formatDateKey(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
 
 // 页面加载完成后执行
 document.addEventListener('DOMContentLoaded', function() {
@@ -35,6 +73,18 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('next-month').addEventListener('click', function() {
         navigateCalendar(1);
     });
+
+    document.getElementById('clear-cache').addEventListener('click', function() {
+        localStorage.removeItem('gameData');
+        localStorage.removeItem('lastUpdated');
+        loadGameData(true);
+    });
+
+    document.addEventListener('error', function(event) {
+        if (event.target instanceof HTMLImageElement && event.target.src !== DEFAULT_IMAGE_URL) {
+            event.target.src = DEFAULT_IMAGE_URL;
+        }
+    }, true);
 });
 
 // 初始化标签页切换功能
@@ -44,10 +94,14 @@ function initTabSwitching() {
     tabs.forEach(tab => {
         tab.addEventListener('click', function() {
             // 移除所有标签的活动状态
-            tabs.forEach(t => t.classList.remove('active'));
+            tabs.forEach(t => {
+                t.classList.remove('active');
+                t.removeAttribute('aria-current');
+            });
             
             // 添加当前标签的活动状态
             this.classList.add('active');
+            this.setAttribute('aria-current', 'page');
             
             // 获取目标标签页
             const targetTab = this.getAttribute('data-tab');
@@ -59,6 +113,12 @@ function initTabSwitching() {
             
             // 显示目标标签页内容
             document.getElementById(targetTab).classList.add('active');
+        });
+        tab.addEventListener('keydown', function(event) {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                this.click();
+            }
         });
     });
 }
@@ -92,7 +152,6 @@ function loadGameData(forceRefresh = false) {
         ])
         .then(([gamesData, recentData]) => {
             // 添加更多调试日志
-            console.log('原始API数据:', { gamesData, recentData });
             
             // 转换游戏数据格式以兼容旧代码
             const playHistories = gamesData.map(game => ({
@@ -114,9 +173,6 @@ function loadGameData(forceRefresh = false) {
                 lastUpdatedAt: new Date().toISOString()
             };
             
-            console.log('处理后的数据:', combinedData);
-            console.log('游戏列表:', combinedData.playHistories.length, '条记录');
-            console.log('最近活动:', combinedData.recentPlayHistories.length, '条记录');
             
             // 缓存数据
             localStorage.setItem('gameData', JSON.stringify(combinedData));
@@ -130,7 +186,6 @@ function loadGameData(forceRefresh = false) {
             updateGamesList(combinedData.playHistories);
             
             document.getElementById('loading-indicator').style.display = 'none';
-            console.log('数据加载成功', combinedData);
         })
         .catch(error => {
             console.error('获取游戏数据失败:', error);
@@ -138,7 +193,6 @@ function loadGameData(forceRefresh = false) {
             
             // 如果API请求失败但有本地缓存数据，回退到本地缓存
             if (cachedData) {
-                console.log('使用缓存数据');
                 const data = JSON.parse(cachedData);
                 updateLastUpdated(data.lastUpdatedAt);
                 updateOverview(data);
@@ -205,7 +259,6 @@ function loadPeriodStats(data) {
         .then(response => response.json())
         .then(historyData => {
             // 添加调试信息
-            console.log('历史数据详情:', historyData);
             
             // 计算本周和本月游玩时间
             const now = new Date();
@@ -224,7 +277,7 @@ function loadPeriodStats(data) {
             
             // 统计每一天的游玩时间
             historyData.forEach(day => {
-                const dayDate = new Date(day.date);
+                const dayDate = parseLocalDate(day.date);
                 const totalMinutes = day.games ? day.games.reduce((sum, game) => sum + game.minutes, 0) : day.total_minutes || 0;
                 
                 // 统计本周时间
@@ -274,7 +327,6 @@ function createPlaytimeChart(games) {
         .then(response => response.json())
         .then(recentData => {
             // 添加调试日志
-            console.log('最近游玩数据原始格式:', recentData);
             
             // 处理最近一周的游戏数据
             let recentGames = [];
@@ -322,11 +374,9 @@ function createPlaytimeChart(games) {
             // 转换为数组并排序
             recentGames = Object.values(gamePlaytimes);
             
-            console.log('处理后的游戏数据:', recentGames);
             
             // 检查是否有数据
             if (recentGames.length === 0) {
-                console.log('没有找到最近游玩数据，使用全部游戏数据回退');
                 fallbackToAllGamesChart(games);
                 return;
             }
@@ -356,7 +406,6 @@ function createPlaytimeChart(games) {
             
             const gameTimes = topGames.map(game => Math.round(game.totalPlayedMinutes / 60 * 10) / 10);
             
-            console.log('图表数据:', { gameNames, gameTimes });
             
             // 更改图表标题
             document.querySelector('.chart-wrapper h3').innerHTML = '<i class="fas fa-chart-pie"></i> 最近游玩时间分布';
@@ -416,14 +465,12 @@ function createPlaytimeChart(games) {
             console.error('获取最近游玩数据失败:', error);
             
             // 失败时回退到使用所有游戏数据
-            console.log('API请求失败，使用全部游戏数据回退');
             fallbackToAllGamesChart(games);
         });
 }
 
 // 添加回退方法，使用所有游戏数据
 function fallbackToAllGamesChart(games) {
-    console.log('执行回退方法，使用全部游戏数据');
     
     // 只取前5个游戏用于图表展示
     const topGames = [...games]
@@ -449,7 +496,6 @@ function fallbackToAllGamesChart(games) {
     
     const gameTimes = topGames.map(game => Math.round(game.totalPlayedMinutes / 60 * 10) / 10);
     
-    console.log('回退图表数据:', { gameNames, gameTimes });
     
     // 标题加上"(全部)"以区分
     document.querySelector('.chart-wrapper h3').innerHTML = '<i class="fas fa-chart-pie"></i> 最近游玩时间分布 (全部)';
@@ -517,7 +563,6 @@ function updateRecentActivity(recentHistories) {
     }
     
     // 从API返回的数据格式分析
-    console.log('最近活动数据结构:', recentHistories);
     
     // 检查数据结构是否是数组对象，每个对象有dailyPlayHistories属性
     const hasDailyPlayHistories = recentHistories.length > 0 && recentHistories[0].dailyPlayHistories;
@@ -541,14 +586,14 @@ function updateRecentActivity(recentHistories) {
         });
         
         // 按日期排序，最近的在前
-        recentGames.sort((a, b) => new Date(b.playedDate) - new Date(a.playedDate));
+        recentGames.sort((a, b) => parseLocalDate(b.playedDate) - parseLocalDate(a.playedDate));
         
         // 只显示最近的8个活动
         const showCount = Math.min(8, recentGames.length);
         
         for (let i = 0; i < showCount; i++) {
             const game = recentGames[i];
-            const date = new Date(game.playedDate);
+            const date = parseLocalDate(game.playedDate);
             
             // 格式化日期显示
             const today = new Date();
@@ -588,10 +633,10 @@ function updateRecentActivity(recentHistories) {
             }
             
             activityItem.innerHTML = `
-                <img src="${imageUrl || 'https://placehold.co/100x100?text=游戏'}" alt="${game.titleName}" class="activity-image">
+                <img src="${escapeHtml(safeImageUrl(imageUrl))}" alt="${escapeHtml(game.titleName)}" class="activity-image">
                 <div class="activity-info">
-                    <div class="activity-title">${game.titleName}</div>
-                    <div class="activity-time">${timeDisplay} · ${dateText}</div>
+                    <div class="activity-title">${escapeHtml(game.titleName)}</div>
+                    <div class="activity-time">${escapeHtml(timeDisplay)} · ${escapeHtml(dateText)}</div>
                 </div>
             `;
             
@@ -626,7 +671,7 @@ function updateRecentActivity(recentHistories) {
             if (activity.playTime) {
                 date = new Date(activity.playTime);
             } else if (activity.playedDate) {
-                date = new Date(activity.playedDate);
+                date = parseLocalDate(activity.playedDate);
             } else if (activity.lastPlayedAt) {
                 date = new Date(activity.lastPlayedAt);
             }
@@ -669,10 +714,10 @@ function updateRecentActivity(recentHistories) {
             }
             
             activityItem.innerHTML = `
-                <img src="${imageUrl || 'https://placehold.co/100x100?text=游戏'}" alt="${gameName}" class="activity-image">
+                <img src="${escapeHtml(safeImageUrl(imageUrl))}" alt="${escapeHtml(gameName)}" class="activity-image">
                 <div class="activity-info">
-                    <div class="activity-title">${gameName}</div>
-                    <div class="activity-time">${timeDisplay || '未知时间'} · ${dateText}</div>
+                    <div class="activity-title">${escapeHtml(gameName)}</div>
+                    <div class="activity-time">${escapeHtml(timeDisplay || '未知时间')} · ${escapeHtml(dateText)}</div>
                 </div>
             `;
             
@@ -736,9 +781,9 @@ function updateRecentTab(recentHistories) {
             const gameElement = document.createElement('div');
             gameElement.className = 'recent-game';
             gameElement.innerHTML = `
-                <img src="${game.imageUrl || 'assets/default-game.png'}" alt="${game.titleName}" onerror="this.src='assets/default-game.png'">
+                <img src="${escapeHtml(safeImageUrl(game.imageUrl))}" alt="${escapeHtml(game.titleName)}">
                 <div class="game-details">
-                    <h4>${game.titleName}</h4>
+                    <h4>${escapeHtml(game.titleName)}</h4>
                     <p>${gameHours > 0 ? gameHours + '小时' : ''}${gameMinutes > 0 ? gameMinutes + '分钟' : (gameHours === 0 ? '不到1分钟' : '')}</p>
                 </div>
             `;
@@ -767,12 +812,12 @@ function createGameItem(game) {
     // 设置游戏卡片内容
     gameItem.innerHTML = `
         <div class="game-card-header">
-            <img src="${game.imageUrl || 'assets/default-game.png'}" alt="${game.titleName}" onerror="this.src='assets/default-game.png'">
+            <img src="${escapeHtml(safeImageUrl(game.imageUrl))}" alt="${escapeHtml(game.titleName)}">
         </div>
         <div class="game-card-body">
-            <h4>${game.titleName}</h4>
-            <p class="game-time">${timeText}</p>
-            <p class="game-last-played">最后游玩: ${lastPlayedDate}</p>
+            <h4>${escapeHtml(game.titleName)}</h4>
+            <p class="game-time">${escapeHtml(timeText)}</p>
+            <p class="game-last-played">最后游玩: ${escapeHtml(lastPlayedDate)}</p>
         </div>
     `;
     
@@ -887,7 +932,7 @@ function updateStatistics(data) {
             let monthlyMinutes = 0;
             
             historyData.forEach(day => {
-                const dayDate = new Date(day.date);
+                const dayDate = parseLocalDate(day.date);
                 
                 // 统计本周时间
                 if (dayDate >= startOfWeek) {
@@ -937,7 +982,6 @@ function createMonthlyChart(games) {
             return response.json();
         })
         .then(monthlyData => {
-            console.log('月度数据加载成功:', monthlyData);
             
             // 获取所有月份并排序
             const sortedMonths = Object.keys(monthlyData).sort();
@@ -1091,8 +1135,8 @@ function createGameMilestones(games) {
                 <i class="fas ${milestone.icon}"></i>
             </div>
             <div class="milestone-info">
-                <h4>${milestone.title}</h4>
-                <p>${milestone.description}</p>
+                <h4>${escapeHtml(milestone.title)}</h4>
+                <p>${escapeHtml(milestone.description)}</p>
             </div>
         `;
         milestonesContainer.appendChild(milestoneElement);
@@ -1118,8 +1162,8 @@ function calculateConsecutiveDays(games) {
     let currentConsecutive = 1;
     
     for (let i = 1; i < sortedDates.length; i++) {
-        const prevDate = new Date(sortedDates[i-1]);
-        const currDate = new Date(sortedDates[i]);
+        const prevDate = parseLocalDate(sortedDates[i-1]);
+        const currDate = parseLocalDate(sortedDates[i]);
         
         // 检查是否是连续的两天
         const dayDiff = (currDate - prevDate) / (1000 * 60 * 60 * 24);
@@ -1281,7 +1325,7 @@ function renderCalendar(date) {
     for (let i = firstDayOfWeek - 1; i >= 0; i--) {
         const day = lastDayOfPrevMonth - i;
         const prevMonthDate = new Date(year, month - 1, day);
-        const dateString = prevMonthDate.toISOString().split('T')[0];
+        const dateString = formatDateKey(prevMonthDate);
         
         const dayElement = document.createElement('div');
         dayElement.className = 'calendar-day outside-month';
@@ -1299,7 +1343,7 @@ function renderCalendar(date) {
     
     for (let day = 1; day <= daysInMonth; day++) {
         const currentDate = new Date(year, month, day);
-        const dateString = currentDate.toISOString().split('T')[0];
+        const dateString = formatDateKey(currentDate);
         const isToday = currentDate.getTime() === today.getTime();
         
         const dayElement = document.createElement('div');
@@ -1334,7 +1378,7 @@ function renderCalendar(date) {
     // 添加下个月的日期
     for (let day = 1; day <= remainingCells; day++) {
         const nextMonthDate = new Date(year, month + 1, day);
-        const dateString = nextMonthDate.toISOString().split('T')[0];
+        const dateString = formatDateKey(nextMonthDate);
         
         const dayElement = document.createElement('div');
         dayElement.className = 'calendar-day outside-month';
@@ -1363,7 +1407,6 @@ function loadDailyPlayData() {
         .then(response => response.json())
         .then(historyData => {
             // 添加调试信息
-            console.log('历史数据:', historyData);
             
             // 清空日历上的游玩时间
             document.querySelectorAll('.day-hours').forEach(el => {
@@ -1376,10 +1419,8 @@ function loadDailyPlayData() {
             historyData.forEach(day => {
                 // 提取日期部分 (YYYY-MM-DD)
                 const dateString = day.date.split('T')[0];
-                console.log('处理日期:', dateString);
                 
                 const hourElements = document.querySelectorAll(`.day-hours[data-date="${dateString}"]`);
-                console.log(`找到${hourElements.length}个匹配元素`);
                 
                 // 计算当天总游玩分钟数
                 let totalMinutes = 0;
@@ -1413,7 +1454,7 @@ function loadDailyPlayData() {
             });
             
             // 如果当前月份有数据，默认选中今天或第一个有数据的日期
-            const today = new Date().toISOString().split('T')[0];
+            const today = formatDateKey(new Date());
             const todayElement = document.querySelector(`.calendar-day[data-date="${today}"]`);
             
             if (todayElement && todayElement.querySelector('.day-hours').textContent !== '--') {
@@ -1423,7 +1464,6 @@ function loadDailyPlayData() {
                 const firstDataDay = historyData[0]?.date.split('T')[0];
                 if (firstDataDay) {
                     const firstDataElement = document.querySelector(`.calendar-day[data-date="${firstDataDay}"]`);
-                    console.log('选择日期元素:', firstDataDay, firstDataElement);
                     if (firstDataElement) {
                         firstDataElement.click();
                     }
@@ -1442,7 +1482,7 @@ function showDayDetails(dateString) {
     const detailGames = document.getElementById('detail-games');
     
     // 格式化日期
-    const date = new Date(dateString);
+    const date = parseLocalDate(dateString);
     const formattedDate = `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
     detailDate.textContent = `${formattedDate}的游戏记录`;
     
@@ -1492,13 +1532,12 @@ function showDayDetails(dateString) {
                 const gameElement = document.createElement('div');
                 gameElement.className = 'detail-game-item';
                 gameElement.innerHTML = `
-                    <img src="${game.image_url || 'https://placehold.co/60x60?text=游戏'}" 
-                         alt="${game.name}" 
-                         class="detail-game-image"
-                         onerror="this.src='https://placehold.co/60x60?text=游戏'">
+                    <img src="${escapeHtml(safeImageUrl(game.image_url))}"
+                         alt="${escapeHtml(game.name)}"
+                         class="detail-game-image">
                     <div class="detail-game-info">
-                        <div class="detail-game-title">${game.name}</div>
-                        <div class="detail-game-time">游玩时间: ${timeText}</div>
+                        <div class="detail-game-title">${escapeHtml(game.name)}</div>
+                        <div class="detail-game-time">游玩时间: ${escapeHtml(timeText)}</div>
                     </div>
                 `;
                 
