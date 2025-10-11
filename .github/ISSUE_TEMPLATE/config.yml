@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security report
+    url: https://github.com/pengchzn/switch_tracker/blob/main/SECURITY.md
+    about: 安全问题请先阅读 SECURITY.md，不要公开发布令牌或漏洞细节
