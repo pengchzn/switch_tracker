@@ -341,6 +341,11 @@ class NintendoSession:
             if r.status_code == 200:
                 try:
                     data = r.json()
+                    if not isinstance(data, dict) or any(
+                        not isinstance(data.get(key), list)
+                        for key in ("playHistories", "recentPlayHistories")
+                    ):
+                        raise ValueError("历史记录响应缺少有效的游戏记录列表")
                     if archive_json:
                         save_dir = PROJECT_ROOT / "history_data"
                         save_dir.mkdir(parents=True, exist_ok=True)
@@ -355,6 +360,7 @@ class NintendoSession:
                         print("数据已成功保存到数据库")
                     else:
                         print("保存数据到数据库失败")
+                        return None
                     
                     # 打印简要信息（优先使用中文名称）
                     games = get_game_list_with_cn_names()
@@ -366,6 +372,7 @@ class NintendoSession:
                 except Exception as e:
                     logger.error(f"保存历史记录失败: {str(e)}")
                     print(f"保存历史记录失败: {str(e)}")
+                    return None
             elif r.status_code == 401:  # token 失效
                 logger.warning("访问令牌已失效，需要重新登录")
                 print("token 已失效，需要重新登录")
