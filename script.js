@@ -226,6 +226,7 @@ function updateLastUpdated(timestamp) {
 
 // 更新概览页面
 function updateOverview(data) {
+    document.getElementById('empty-state').hidden = data.playHistories.length > 0;
     // 更新总游戏数
     document.getElementById('total-games').textContent = data.playHistories.length;
     
@@ -236,13 +237,15 @@ function updateOverview(data) {
     
     // 找出游玩时间最长的游戏
     const mostPlayedGame = data.playHistories.reduce((prev, current) => 
-        (prev.totalPlayedMinutes > current.totalPlayedMinutes) ? prev : current
+        (!prev || current.totalPlayedMinutes > prev.totalPlayedMinutes) ? current : prev,
+        null
     );
     
-    document.getElementById('most-played-game').textContent = mostPlayedGame.titleName;
-    const mostPlayedHours = Math.floor(mostPlayedGame.totalPlayedMinutes / 60);
+    document.getElementById('most-played-game').textContent = mostPlayedGame?.titleName ?? '-';
+    const mostPlayedMinutes = mostPlayedGame?.totalPlayedMinutes ?? 0;
+    const mostPlayedHours = Math.floor(mostPlayedMinutes / 60);
     document.getElementById('most-played-time').textContent = 
-        `${mostPlayedHours}小时${mostPlayedGame.totalPlayedMinutes % 60}分钟`;
+        `${mostPlayedHours}小时${mostPlayedMinutes % 60}分钟`;
     
     // 创建游玩时间分布图表
     createPlaytimeChart(data.playHistories);
