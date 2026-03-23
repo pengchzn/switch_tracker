@@ -1,12 +1,14 @@
 <div align="center">
 
-<img src="static/app-icon.svg" width="96" alt="Switch Tracker 图标">
+<img src="static/app-icon.svg" width="96" alt="Switch Tracker icon">
 
 # Switch Tracker
 
-**把散落在 Nintendo 账户里的游玩记录，变成属于自己的本地游戏日志。**
+**Turn the play history scattered across your Nintendo account into a local game journal you control.**
 
-[功能](#功能) · [快速开始](#快速开始) · [项目设计](#项目设计) · [路线图](#路线图) · [参与贡献](#参与贡献)
+**English** | [简体中文](README.zh-CN.md)
+
+[Features](#features) · [Quick start](#quick-start) · [Design](#project-design) · [Roadmap](#roadmap) · [Contributing](#contributing)
 
 </div>
 
@@ -14,41 +16,41 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
 
-一个本地优先、非商业的 Nintendo Switch 游玩时间记录与可视化工具。数据保存在自己的电脑上，并通过 Web 仪表盘展示趋势、游戏列表和日历。
+Switch Tracker is a local-first, non-commercial tool for collecting and visualizing Nintendo Switch playtime. Your data stays on your computer and is presented through a lightweight web dashboard with trends, game lists, recent activity, and calendar views.
 
-## 我为什么做这个项目
+## Why I built it
 
-Nintendo Switch 自带的游玩记录适合快速查看，但不方便长期整理和回顾。我想知道自己每个月玩了多久、最近更常打开哪些游戏，也希望这些记录由自己保存，而不是只能依赖平台界面。
+The play history built into Nintendo Switch is useful for a quick glance, but it is not designed for organizing or revisiting activity over time. I wanted to understand how much I played each month, which games I returned to most often, and—most importantly—to keep a copy of that history under my own control.
 
-Switch Tracker 因此从一个个人脚本逐步变成了现在的小型本地应用。它仍然是我在业余时间维护的个人项目：优先解决自己真实使用中遇到的问题，同时尽量把安装、隐私和贡献流程做完整。
+Switch Tracker grew from a personal script into a small local application. It remains an independently maintained project built in my spare time: the priorities come from real use, while installation, privacy, testing, and contribution workflows are treated as first-class parts of the project.
 
-**当前状态：持续开发中。** 核心采集、SQLite 存储、可视化和中文名称翻译已经可用；Nintendo 接口变化、跨平台体验和前端测试仍会继续完善。实际进展记录在 [CHANGELOG.md](CHANGELOG.md)，后续计划见 [ROADMAP.md](ROADMAP.md)。
+**Project status: under active development.** Core collection, SQLite storage, visualization, and local title translation are usable today. Nintendo API changes, cross-platform setup, and frontend testing remain areas for continued improvement. See [CHANGELOG.md](CHANGELOG.md) for completed work and [ROADMAP.md](ROADMAP.md) for planned directions.
 
 > [!IMPORTANT]
-> 本项目是非官方社区项目，与 Nintendo 没有隶属、授权或背书关系。接口可能随时发生变化。请只访问自己的账户数据，并自行确认使用方式符合所在地区的法律和相关服务条款。
+> This is an unofficial community project. It is not affiliated with, authorized by, or endorsed by Nintendo. Nintendo may change the underlying interfaces at any time. Access only your own account data and make sure your use complies with applicable laws and terms of service.
 
-## 功能
+## Features
 
-- 自动收集游戏总时长和每日游玩记录
-- 幂等更新：重复采集同一天的数据不会重复累计
-- 总览、月度趋势、最近活动、游戏列表和日历视图
-- 本地 CSV 游戏名称翻译
-- 本地优先存储；令牌、数据库、日志和原始响应默认不进入 Git
-- 适合 cron 等任务调度器的单次采集命令
+- Collect total playtime and daily play records
+- Update the same day idempotently, without double-counting repeated collections
+- Explore overview, monthly trend, recent activity, game list, and calendar views
+- Maintain localized game titles through a local CSV workflow
+- Keep tokens, databases, logs, and raw responses out of Git by default
+- Run a single reliable collection command from schedulers such as cron
 
-## 界面预览
+## Screenshots
 
-| 总览 | 最近游玩 |
+| Overview | Recent activity |
 | --- | --- |
-| ![总览页面](pic/main.png) | ![最近游玩页面](pic/recent.png) |
+| ![Overview dashboard](pic/main.png) | ![Recent activity view](pic/recent.png) |
 
-| 游戏日历 | 游戏列表 |
+| Game calendar | Game list |
 | --- | --- |
-| ![游戏日历页面](pic/calender.png) | ![游戏列表页面](pic/game_list.png) |
+| ![Game calendar](pic/calender.png) | ![Game list](pic/game_list.png) |
 
-## 快速开始
+## Quick start
 
-要求 Python 3.9 或更高版本。
+Switch Tracker requires Python 3.9 or later.
 
 ```bash
 git clone https://github.com/pengchzn/switch_tracker.git
@@ -60,69 +62,69 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-首次收集数据：
+Collect data for the first time:
 
 ```bash
 python get_switch_data.py
 ```
 
-终端会输出 Nintendo 登录链接。登录并选择账户后，将回调链接粘贴回终端。会话令牌保存在 `config/tokens.json`，文件权限会限制为当前用户可读写。
+The terminal will print a Nintendo sign-in URL. Sign in, select your account, and paste the callback URL back into the terminal. The session token is saved to `config/tokens.json` with permissions restricted to the current user.
 
-启动本地仪表盘：
+Start the local dashboard:
 
 ```bash
 python server.py
 ```
 
-访问 <http://127.0.0.1:8000>。服务默认只监听本机回环地址，不应直接暴露到公网。
+Open <http://127.0.0.1:8000>. The server listens only on the loopback interface by default and should not be exposed directly to the public internet.
 
-## 定时采集
+## Scheduled collection
 
-`daily_collect.py` 只执行一次采集并返回可靠的退出码，不会擅自重启 Web 服务：
+`daily_collect.py` performs one collection and returns a reliable exit code. It does not restart or manage the web server:
 
 ```bash
 python daily_collect.py
 ```
 
-cron 示例：
+Example cron entry:
 
 ```cron
 0 23 * * * cd /path/to/switch_tracker && .venv/bin/python daily_collect.py
 ```
 
-如果确实需要保存 API 原始 JSON 响应，可显式启用：
+To retain raw API responses for debugging, enable archival explicitly:
 
 ```bash
 python get_switch_data.py --archive-json
 ```
 
-原始响应可能包含个人活动信息，因此默认不保存，并且 `history_data/` 已被 Git 忽略。
+Raw responses may contain personal activity data, so they are not saved by default. The `history_data/` directory is also ignored by Git.
 
-## 游戏名称翻译
+## Game title translation
 
 ```bash
 python game_translation.py export
-# 编辑 game_translations.csv 中的 chinese_name
+# Edit the chinese_name column in game_translations.csv
 python game_translation.py import
 ```
 
-导入时会同步更新数据库，无需额外执行 `apply`；为兼容旧用法，`apply` 命令仍然可用。
+Importing updates the database immediately. The legacy `apply` command remains available for compatibility.
 
-## 配置
+## Configuration
 
-| 环境变量 | 默认值 | 用途 |
+| Environment variable | Default | Purpose |
 | --- | --- | --- |
-| `SWITCH_TRACKER_DB` | `./switch_tracker.db` | 自定义 SQLite 文件路径 |
-| `SWITCH_TRACKER_HOST` | `127.0.0.1` | Web 服务监听地址 |
-| `SWITCH_TRACKER_PORT` | `8000` | Web 服务端口 |
-| `FLASK_DEBUG` | `0` | 仅本地开发时设为 `1` |
-| `LOG_LEVEL` | `INFO` | Web 服务日志级别 |
+| `SWITCH_TRACKER_DB` | `./switch_tracker.db` | Use a custom SQLite database path |
+| `SWITCH_TRACKER_HOST` | `127.0.0.1` | Set the web server bind address |
+| `SWITCH_TRACKER_PORT` | `8000` | Set the web server port |
+| `FLASK_DEBUG` | `0` | Set to `1` only during local development |
+| `LOG_LEVEL` | `INFO` | Set the web server log level |
 
-将监听地址改为 `0.0.0.0` 会允许局域网中的设备访问。这样做之前，应配置防火墙或可信反向代理；本项目目前没有用户认证。
+Binding to `0.0.0.0` allows other devices on the local network to connect. Configure a firewall or trusted reverse proxy first; the project does not currently provide user authentication.
 
-## 项目设计
+## Project design
 
-这个项目刻意保持轻量：Python 负责认证和采集，SQLite 负责本地持久化，Flask 提供只读 API，浏览器完成可视化。没有外部数据库，也不要求注册额外的云服务。
+The project intentionally stays lightweight. Python handles authentication and collection, SQLite provides local persistence, Flask serves a read-only API, and the browser renders the dashboard. No external database or additional cloud account is required.
 
 ```text
 Nintendo account
@@ -134,32 +136,32 @@ get_switch_data.py ──► tracker_db.py ──► SQLite
 Browser dashboard ◄── JSON API ◄── server.py
 ```
 
-几个核心取舍：
+The main design choices are:
 
-- **本地优先**：令牌和游玩数据默认不离开用户设备。
-- **重复执行安全**：同一天的数据采用更新而非累加，定时任务可以放心重跑。
-- **保守暴露**：Web 服务默认只监听本机，并且不会把仓库目录作为静态文件目录。
-- **小步维护**：优先使用 Python、SQLite 和原生 JavaScript，避免不必要的基础设施。
+- **Local first:** tokens and play history remain on the user's device by default.
+- **Safe to repeat:** collecting the same day updates existing data instead of accumulating duplicates.
+- **Conservative exposure:** the server binds locally and never serves the repository as its static root.
+- **Small, maintainable stack:** Python, SQLite, and native JavaScript keep infrastructure to a minimum.
 
-更详细的模块边界和数据流见 [docs/architecture.md](docs/architecture.md)。
+For module boundaries and a more detailed data flow, see [docs/architecture.md](docs/architecture.md).
 
-## 数据与隐私
+## Data and privacy
 
-- `config/tokens.json`：Nintendo 会话和访问令牌，敏感。
-- `switch_tracker.db`：游戏及游玩历史，属于个人活动数据。
-- `history_data/`：可选的原始 API 响应，可能包含更多个人数据。
-- `*.log`：运行日志。
+- `config/tokens.json`: sensitive Nintendo session and access tokens
+- `switch_tracker.db`: personal game and play-history data
+- `history_data/`: optional raw API responses that may contain additional personal data
+- `*.log`: runtime logs
 
-这些路径都在 `.gitignore` 中。提交前仍建议运行：
+These paths are covered by `.gitignore`. Before committing, it is still worth checking:
 
 ```bash
 git status --short
-git grep -nE 'session_token|access_token' -- ':!README.md'
+git grep -nE 'session_token|access_token' -- ':!README.md' ':!README.zh-CN.md'
 ```
 
-若发现真实令牌曾被提交，请先在 Nintendo 账户侧撤销会话，再清理 Git 历史；仅删除最新文件不足以撤销泄露。
+If a real token was ever committed, revoke the session through the Nintendo account first and then clean the Git history. Deleting only the latest copy does not invalidate an exposed credential.
 
-## 开发与测试
+## Development and testing
 
 ```bash
 python -m pip install -r requirements-dev.txt
@@ -168,29 +170,29 @@ pytest
 node --check script.js
 ```
 
-测试使用临时数据库，不会读取或修改真实令牌与个人游玩数据。项目结构：
+Tests use temporary databases and do not read or modify real tokens or personal play data. Key files include:
 
-- `get_switch_data.py`：认证和数据采集
-- `tracker_db.py`：数据库建表、迁移及幂等持久化
-- `server.py`：本地仪表盘与只读 JSON API
-- `game_translation.py`：CSV 翻译工作流
-- `daily_collect.py`：供调度器调用的单次采集入口
-- `templates/`、`script.js`、`styles.css`：仪表盘前端
+- `get_switch_data.py`: authentication and data collection
+- `tracker_db.py`: database schema, migrations, and idempotent persistence
+- `server.py`: local dashboard and read-only JSON API
+- `game_translation.py`: CSV translation workflow
+- `daily_collect.py`: one-shot entry point for schedulers
+- `templates/`, `script.js`, `styles.css`: dashboard frontend
 
-## 路线图
+## Roadmap
 
-近期重点包括认证失败提示、数据导入导出、更多统计维度以及前端自动化测试。完整、可调整的计划见 [ROADMAP.md](ROADMAP.md)。路线图表达方向，不承诺固定交付日期。
+Near-term priorities include clearer authentication failure messages, data import and export, additional statistics, and automated frontend tests. The full, adjustable plan is in [ROADMAP.md](ROADMAP.md). It describes direction rather than promising fixed delivery dates.
 
-## 参与贡献
+## Contributing
 
-欢迎提交问题与改进。开始前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)；安全问题请按 [SECURITY.md](SECURITY.md) 私下报告，不要创建公开 Issue。
+Issues and focused improvements are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before getting started. Report security concerns privately according to [SECURITY.md](SECURITY.md), not through a public issue.
 
-如果你也在维护自己的 Switch 游玩记录，欢迎分享使用场景。Bug 报告、文档修正和小范围改进都很有帮助。
+If you also maintain your own Switch play history, feedback about your workflow is especially useful. Bug reports, documentation fixes, and small, well-scoped improvements are all appreciated.
 
-## 维护者
+## Maintainer
 
-由 [Chen Peng](https://github.com/pengchzn) 在业余时间开发和维护。
+Developed and maintained in spare time by [Chen Peng](https://github.com/pengchzn).
 
-## 许可证
+## License
 
-代码采用 [MIT License](LICENSE)。Nintendo、Nintendo Switch 及相关标识是其各自权利人的商标；MIT License 不授予任何第三方商标权。
+The code is available under the [MIT License](LICENSE). Nintendo, Nintendo Switch, and related marks are trademarks of their respective owners. The MIT License does not grant rights to any third-party trademarks.
