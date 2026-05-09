@@ -1,5 +1,7 @@
 // 全局变量
 let gameData = null;
+let gameSearchTerm = '';
+let gameSortOption = 'playtime';
 const DEFAULT_IMAGE_URL = '/static/default-game.svg';
 
 function escapeHtml(value) {
@@ -826,56 +828,36 @@ function createGameItem(game) {
 
 // 更新游戏列表
 function updateGamesList(games) {
-    const gamesGrid = document.getElementById('games-grid');
-    
-    // 清空当前游戏列表
-    gamesGrid.innerHTML = '';
-    
-    // 默认按游玩时间排序
-    const sortedGames = [...games].sort((a, b) => b.totalPlayedMinutes - a.totalPlayedMinutes);
-    
-    // 渲染游戏列表
-    sortedGames.forEach(game => {
-        const gameItem = createGameItem(game);
-        gamesGrid.appendChild(gameItem);
-    });
-    
-    // 保存为全局变量以便后续操作
     gameData = [...games];
+    renderGamesList();
 }
 
 // 游戏搜索过滤
 function filterGames(searchTerm) {
-    if (!gameData) return;
-    
-    // 如果搜索词为空，则显示所有游戏
-    if (!searchTerm.trim()) {
-        updateGamesList(gameData);
-        return;
-    }
-    
-    // 过滤游戏
-    const filteredGames = gameData.filter(game => 
-        game.titleName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (game.originalName && game.originalName.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
-    
-    // 更新游戏列表
-    updateGamesList(filteredGames);
+    gameSearchTerm = searchTerm.trim().toLowerCase();
+    renderGamesList();
 }
 
 // 游戏排序
 function sortGames(sortOption) {
+    gameSortOption = sortOption;
+    renderGamesList();
+}
+
+function renderGamesList() {
     if (!gameData) return;
-    
+    const filteredGames = gameData.filter(game =>
+        game.titleName.toLowerCase().includes(gameSearchTerm) ||
+        (game.originalName && game.originalName.toLowerCase().includes(gameSearchTerm))
+    );
     let sortedGames;
-    
-    switch (sortOption) {
+
+    switch (gameSortOption) {
         case 'playtime':
-            sortedGames = [...gameData].sort((a, b) => b.totalPlayedMinutes - a.totalPlayedMinutes);
+            sortedGames = filteredGames.sort((a, b) => b.totalPlayedMinutes - a.totalPlayedMinutes);
             break;
         case 'recent':
-            sortedGames = [...gameData].sort((a, b) => {
+            sortedGames = filteredGames.sort((a, b) => {
                 // 确保日期字符串格式一致进行比较
                 const dateA = a.lastPlayedAt ? new Date(a.lastPlayedAt) : new Date(0);
                 const dateB = b.lastPlayedAt ? new Date(b.lastPlayedAt) : new Date(0);
@@ -883,10 +865,10 @@ function sortGames(sortOption) {
             });
             break;
         case 'name':
-            sortedGames = [...gameData].sort((a, b) => a.titleName.localeCompare(b.titleName));
+            sortedGames = filteredGames.sort((a, b) => a.titleName.localeCompare(b.titleName));
             break;
         default:
-            sortedGames = [...gameData];
+            sortedGames = filteredGames;
     }
     
     // 更新游戏列表显示

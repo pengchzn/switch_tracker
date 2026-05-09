@@ -24,5 +24,7 @@ lint:
 
 test:
 	pytest
+	node --check script.js
+	node --test tests/frontend.test.cjs
 
 check: lint test
