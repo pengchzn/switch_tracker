@@ -6,6 +6,21 @@ const { test } = require('node:test');
 
 const source = fs.readFileSync(path.join(__dirname, '../script.js'), 'utf8');
 
+test('empty overview renders zero values and recovers after collection', () => {
+    const h = harness();
+    h.run(`createPlaytimeChart = () => {}; loadPeriodStats = () => {};
+        updateOverview({playHistories:[]});`);
+    assert.equal(h.get('total-games').textContent, 0);
+    assert.equal(h.get('most-played-game').textContent, '-');
+    assert.equal(h.get('total-playtime').textContent, '0小时0分钟');
+    assert.equal(h.get('empty-state').hidden, false);
+    h.run(`updateOverview({playHistories:[{titleName:'Zelda',totalPlayedMinutes:90}]});`);
+    assert.equal(h.get('empty-state').hidden, true);
+    assert.equal(h.get('most-played-game').textContent, 'Zelda');
+    h.run(`updateOverview({playHistories:[]});`);
+    assert.equal(h.get('most-played-time').textContent, '0小时0分钟');
+});
+
 function harness() {
     const elements = new Map();
     const element = () => ({
