@@ -1272,7 +1272,7 @@ function createTopGamesChart(games) {
 }
 
 // 当前显示的日历年月
-let currentCalendarDate = new Date();
+let currentCalendarDate = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 
 // 初始化游戏日历
 function initGameCalendar() {
@@ -1378,7 +1378,9 @@ function renderCalendar(date) {
 
 // 导航日历
 function navigateCalendar(months) {
-    currentCalendarDate.setMonth(currentCalendarDate.getMonth() + months);
+    currentCalendarDate = new Date(
+        currentCalendarDate.getFullYear(), currentCalendarDate.getMonth() + months, 1
+    );
     renderCalendar(currentCalendarDate);
     loadDailyPlayData();
 }
