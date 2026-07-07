@@ -71,3 +71,19 @@ test('search, sort, and data refresh preserve view state', () => {
     assert.equal(h.get('games-grid').children.length, 3);
     assert.match(h.get('games-grid').children[0].innerHTML, /Zelda A/);
 });
+
+test('calendar navigation handles short months, leap years and year boundaries', () => {
+    const h = harness();
+    h.run('renderCalendar = () => {}; loadDailyPlayData = () => {};');
+    for (const [year, month, day, offset, expected] of [
+        [2026, 0, 31, 1, '2026-02-01'],
+        [2026, 2, 31, -1, '2026-02-01'],
+        [2024, 0, 31, 1, '2024-02-01'],
+        [2024, 1, 29, 1, '2024-03-01'],
+        [2026, 11, 31, 1, '2027-01-01'],
+        [2026, 0, 31, -1, '2025-12-01'],
+    ]) {
+        assert.equal(h.run(`currentCalendarDate = new Date(${year},${month},${day});
+            navigateCalendar(${offset}); formatDateKey(currentCalendarDate);`), expected);
+    }
+});
