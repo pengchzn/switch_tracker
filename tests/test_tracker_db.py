@@ -1,5 +1,7 @@
 import sqlite3
 
+import pytest
+
 from tracker_db import connect, init_database, save_play_data
 
 
@@ -99,3 +101,21 @@ def test_migration_deduplicates_legacy_daily_rows(tmp_path):
     with connect(db_file) as migrated:
         rows = migrated.execute("SELECT played_minutes FROM daily_play").fetchall()
     assert [row["played_minutes"] for row in rows] == [55]
+
+
+def test_daily_snapshot_can_be_corrected_to_zero(tmp_path):
+    db_file = tmp_path / "zero.db"
+    save_play_data(sample_payload(minutes=60), "2026-09-20T10:00:00+00:00", db_file)
+    save_play_data(sample_payload(minutes=0), "2026-09-20T11:00:00+00:00", db_file)
+    with connect(db_file) as connection:
+        rows = connection.execute("SELECT played_minutes FROM daily_play").fetchall()
+    assert [row[0] for row in rows] == [0]
+
+
+@pytest.mark.parametrize("minutes", [-1, None, "45", True, float("nan"), float("inf")])
+def test_invalid_minutes_do_not_overwrite_valid_snapshot(tmp_path, minutes):
+    db_file = tmp_path / "invalid.db"
+    save_play_data(sample_payload(minutes=60), "2026-09-20T10:00:00+00:00", db_file)
+    save_play_data(sample_payload(minutes=minutes), "2026-09-20T11:00:00+00:00", db_file)
+    with connect(db_file) as connection:
+        assert connection.execute("SELECT played_minutes FROM daily_play").fetchone()[0] == 60

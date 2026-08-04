@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import sqlite3
 from pathlib import Path
@@ -151,7 +152,13 @@ def save_play_data(
             for game in day_record.get("dailyPlayHistories", []):
                 title_id = game.get("titleId")
                 minutes = game.get("totalPlayedMinutes")
-                if not title_id or not isinstance(minutes, (int, float)) or minutes <= 0:
+                if (
+                    not title_id
+                    or isinstance(minutes, bool)
+                    or not isinstance(minutes, (int, float))
+                    or not math.isfinite(minutes)
+                    or minutes < 0
+                ):
                     continue
                 connection.execute(
                     """
