@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import os
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Optional, Union
 
@@ -109,9 +110,12 @@ def save_play_data(
     db_file: Optional[Union[str, Path]] = None,
 ) -> int:
     """Persist one API snapshot and return the number of daily rows upserted."""
+    snapshot_time = _snapshot_time(collected_at)
     init_database(db_file)
     daily_rows = 0
     with connect(db_file) as connection:
+        # Serialize the freshness check and write across overlapping collectors.
+        connection.execute("BEGIN IMMEDIATE")
         for game in data.get("playHistories", []):
             title_id = game.get("titleId")
             title_name = game.get("titleName")
@@ -160,6 +164,12 @@ def save_play_data(
                     or minutes < 0
                 ):
                     continue
+                previous = connection.execute(
+                    "SELECT collected_at FROM daily_play WHERE title_id = ? AND played_date = ?",
+                    (title_id, played_date),
+                ).fetchone()
+                if previous and snapshot_time < _snapshot_time(previous["collected_at"]):
+                    continue
                 connection.execute(
                     """
                     INSERT INTO games (title_id, title_name, image_url, device_type)
@@ -202,3 +212,11 @@ def save_play_data(
             """
         )
     return daily_rows
+
+
+def _snapshot_time(value: str) -> datetime:
+    """Compare absolute instants; legacy timestamps without an offset use UTC."""
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)

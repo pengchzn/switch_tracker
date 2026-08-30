@@ -119,3 +119,28 @@ def test_invalid_minutes_do_not_overwrite_valid_snapshot(tmp_path, minutes):
     save_play_data(sample_payload(minutes=minutes), "2026-09-20T11:00:00+00:00", db_file)
     with connect(db_file) as connection:
         assert connection.execute("SELECT played_minutes FROM daily_play").fetchone()[0] == 60
+
+
+@pytest.mark.parametrize("old_time,new_time", [
+    ("2026-09-20T10:00:00+00:00", "2026-09-20T11:00:00+00:00"),
+    ("2026-09-20T10:00:00Z", "2026-09-20T07:00:00-04:00"),
+    ("2026-09-20T10:00:00", "2026-09-20T11:00:00+00:00"),
+    ("2026-09-20T10:00:00.000001Z", "2026-09-20T10:00:00.000002Z"),
+])
+def test_older_daily_snapshot_cannot_replace_newer_value(tmp_path, old_time, new_time):
+    db_file = tmp_path / "ordered.db"
+    save_play_data(sample_payload(minutes=60), new_time, db_file)
+    assert save_play_data(sample_payload(minutes=30), old_time, db_file) == 0
+    with connect(db_file) as connection:
+        row = connection.execute("SELECT played_minutes, collected_at FROM daily_play").fetchone()
+    assert tuple(row) == (60, new_time)
+    assert save_play_data(sample_payload(minutes=0), new_time, db_file) == 1
+    with connect(db_file) as connection:
+        assert connection.execute("SELECT played_minutes FROM daily_play").fetchone()[0] == 0
+
+
+def test_invalid_snapshot_timestamp_is_rejected_before_write(tmp_path):
+    db_file = tmp_path / "invalid-time.db"
+    with pytest.raises(ValueError):
+        save_play_data(sample_payload(), "not-a-timestamp", db_file)
+    assert not db_file.exists()
