@@ -4,20 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Switch Tracker</title>
-    <link rel="stylesheet" href="styles.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- 添加清除缓存的脚本 -->
-    <script>
-        // 清除缓存
-        localStorage.removeItem('gameData');
-        localStorage.removeItem('lastUpdated');
-        console.log('已清除本地缓存');
-    </script>
+    <meta name="description" content="在本地收集并可视化 Nintendo Switch 游玩时间。">
+    <link rel="icon" href="{{ url_for('static_asset', filename='app-icon.svg') }}" type="image/svg+xml">
+    <link rel="stylesheet" href="{{ url_for('styles') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+    <script src="{{ url_for('script') }}" defer></script>
 </head>
 <body>
     <!-- 添加loading指示器 -->
-    <div id="loading-indicator" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(255,255,255,0.8); z-index: 1000; justify-content: center; align-items: center;">
+    <div id="loading-indicator" role="status" aria-live="polite" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(255,255,255,0.8); z-index: 1000; justify-content: center; align-items: center;">
         <div style="text-align: center; background-color: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 30px rgba(0,0,0,0.15);">
             <div style="width: 50px; height: 50px; border: 4px solid #f3f3f3; border-top: 4px solid #e60012; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 15px;"></div>
             <div style="font-weight: 500; font-size: 16px;">数据加载中...</div>
@@ -33,20 +29,20 @@
     <div class="container">
         <div class="sidebar">
             <div class="sidebar-header">
-                <img src="https://www.nintendo.com/favicon.ico" alt="Switch Logo" class="logo">
+                <img src="{{ url_for('static_asset', filename='app-icon.svg') }}" alt="" class="logo">
                 <h1>Switch Tracker</h1>
             </div>
             <nav>
                 <ul>
-                    <li class="active" data-tab="overview"><i class="fas fa-home"></i> 总览</li>
-                    <li data-tab="recent"><i class="fas fa-history"></i> 最近游玩</li>
-                    <li data-tab="games"><i class="fas fa-gamepad"></i> 游戏列表</li>
-                    <li data-tab="calendar"><i class="fas fa-calendar-alt"></i> 游戏日历</li>
+                    <li class="active" data-tab="overview" tabindex="0" role="button" aria-controls="overview" aria-current="page"><i class="fas fa-home"></i> 总览</li>
+                    <li data-tab="recent" tabindex="0" role="button" aria-controls="recent"><i class="fas fa-history"></i> 最近游玩</li>
+                    <li data-tab="games" tabindex="0" role="button" aria-controls="games"><i class="fas fa-gamepad"></i> 游戏列表</li>
+                    <li data-tab="calendar" tabindex="0" role="button" aria-controls="calendar"><i class="fas fa-calendar-alt"></i> 游戏日历</li>
                 </ul>
             </nav>
             <div class="user-info">
                 <p>上次更新: <span id="last-updated"></span></p>
-                <button id="clear-cache">清除缓存</button>
+                <button id="clear-cache" type="button">清除缓存</button>
             </div>
         </div>
         
@@ -139,9 +135,9 @@
                 <div class="section-header">
                     <h2>游戏日历</h2>
                     <div class="controls">
-                        <button id="prev-month"><i class="fas fa-chevron-left"></i></button>
+                        <button id="prev-month" type="button" aria-label="上个月"><i class="fas fa-chevron-left"></i></button>
                         <span id="calendar-title">2025年4月</span>
-                        <button id="next-month"><i class="fas fa-chevron-right"></i></button>
+                        <button id="next-month" type="button" aria-label="下个月"><i class="fas fa-chevron-right"></i></button>
                     </div>
                 </div>
                 <div class="calendar-container">
@@ -190,8 +186,8 @@
                 <div class="section-header">
                     <h2>游戏列表</h2>
                     <div class="controls">
-                        <input type="text" id="game-search" placeholder="搜索游戏...">
-                        <select id="sort-games">
+                        <input type="search" id="game-search" placeholder="搜索游戏..." aria-label="搜索游戏">
+                        <select id="sort-games" aria-label="游戏排序方式">
                             <option value="playtime">按游玩时间排序</option>
                             <option value="recent">按最近游玩排序</option>
                             <option value="name">按名称排序</option>
@@ -203,58 +199,5 @@
         </main>
     </div>
     
-    <script src="script.js"></script>
-    
-    <!-- 调试脚本 -->
-    <script>
-        // 添加调试功能，直接从API获取数据并在控制台显示
-        console.log('开始调试');
-        
-        // 确保API请求绝对路径
-        const baseUrl = window.location.origin;
-        
-        // 测试直接从API获取数据
-        Promise.all([
-            fetch(`${baseUrl}/api/games`).then(response => {
-                if (!response.ok) throw new Error(`Games API 错误: ${response.status}`);
-                return response.json();
-            }),
-            fetch(`${baseUrl}/api/recent_activities`).then(response => {
-                if (!response.ok) throw new Error(`Activities API 错误: ${response.status}`);
-                return response.json();
-            }),
-            fetch(`${baseUrl}/api/history`).then(response => {
-                if (!response.ok) throw new Error(`History API 错误: ${response.status}`);
-                return response.json();
-            }),
-            fetch(`${baseUrl}/api/monthly_playtime`).then(response => {
-                if (!response.ok) throw new Error(`Monthly API 错误: ${response.status}`);
-                return response.json();
-            })
-        ])
-        .then(([gamesData, recentData, historyData, monthlyData]) => {
-            console.log('API调试请求成功');
-            console.log('游戏数据:', gamesData);
-            console.log('最近活动:', recentData);
-            console.log('历史数据:', historyData);
-            console.log('月度统计:', monthlyData);
-            
-            // 不再强制刷新，让正常的数据加载流程自行运行
-            // document.getElementById('refresh-data').click();
-        })
-        .catch(error => {
-            console.error('API调试请求失败:', error);
-        });
-    </script>
-    
-    <!-- 添加清除缓存的事件监听器 -->
-    <script>
-        document.getElementById('clear-cache').addEventListener('click', function() {
-            localStorage.removeItem('gameData');
-            localStorage.removeItem('lastUpdated');
-            alert('缓存已清除，页面将重新加载');
-            location.reload();
-        });
-    </script>
 </body>
-</html> 
+</html>

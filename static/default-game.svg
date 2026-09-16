@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-label="游戏封面占位图">
+  <rect width="160" height="160" rx="24" fill="#eef1f5"/>
+  <path d="M53 62h54a23 23 0 0 1 22 17l8 29a14 14 0 0 1-24 13l-12-14H59l-12 14a14 14 0 0 1-24-13l8-29a23 23 0 0 1 22-17Z" fill="#c7ced8"/>
+  <path d="M53 78v18M44 87h18" stroke="#fff" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="108" cy="82" r="5" fill="#fff"/><circle cx="119" cy="94" r="5" fill="#fff"/>
+</svg>

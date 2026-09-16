@@ -775,6 +775,22 @@ input:focus {
     }
 }
 
+:focus-visible {
+    outline: 3px solid var(--switch-blue);
+    outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+    }
+}
+
 @media (max-width: 992px) {
     .stats-cards,
     .charts-row {
@@ -2044,4 +2060,4 @@ canvas {
         height: 300px;
         padding: 15px;
     }
-} 
+}
