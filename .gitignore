@@ -31,6 +31,7 @@ __pycache__/
 *$py.class
 
 # 虚拟环境
+.venv/
 venv/
 env/
 ENV/
@@ -45,3 +46,11 @@ ENV/
 *.swp
 *.swo 
 *.pid
+
+# 测试、覆盖率与本地环境
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.env
+.env.*

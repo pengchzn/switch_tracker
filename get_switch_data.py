@@ -1,218 +1,52 @@
-import requests
-import json
+import argparse
 import base64
 import hashlib
-import re
-import sys
-import os
-import sqlite3
-from datetime import datetime, timedelta
-import time
+import json
 import logging
+import os
+import stat
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
+
+import requests
+
+from tracker_db import connect, database_path, init_database, save_play_data
+
+PROJECT_ROOT = Path(__file__).resolve().parent
 
 # 配置日志 - 仅保留关键日志
 logging.basicConfig(
     level=logging.WARNING,  # 改为WARNING级别，减少日志量
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("switch_tracker.log"),
+        logging.FileHandler(PROJECT_ROOT / "switch_tracker.log", encoding="utf-8"),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger("switch_tracker")
 
 # 数据库配置
-DB_FILE = 'switch_tracker.db'
-
-def init_database():
-    """初始化数据库表结构"""
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        
-        # 创建游戏表 - 存储游戏基本信息
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS games (
-            title_id TEXT PRIMARY KEY,
-            title_name TEXT NOT NULL,
-            image_url TEXT,
-            device_type TEXT,
-            chinese_name TEXT
-        )
-        ''')
-        
-        # 创建游戏历史记录表 - 存储每次获取的游戏总时长
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS game_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title_id TEXT NOT NULL,
-            first_played_at TEXT,
-            last_played_at TEXT,
-            total_played_days INTEGER,
-            total_played_minutes INTEGER,
-            collected_at TEXT NOT NULL,
-            FOREIGN KEY (title_id) REFERENCES games (title_id)
-        )
-        ''')
-        
-        # 创建每日游玩记录表 - 存储每天的游玩记录
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS daily_play (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title_id TEXT NOT NULL,
-            played_date TEXT NOT NULL,
-            played_minutes INTEGER NOT NULL,
-            collected_at TEXT NOT NULL,
-            FOREIGN KEY (title_id) REFERENCES games (title_id)
-        )
-        ''')
-        
-        # 创建游戏翻译表 - 如果不存在
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS game_translations (
-            title_id TEXT PRIMARY KEY,
-            japanese_name TEXT,
-            chinese_name TEXT
-        )
-        ''')
-        
-        conn.commit()
-        conn.close()
-        return True
-    except Exception as e:
-        logger.error(f"初始化数据库失败: {str(e)}")
-        return False
+DB_FILE = database_path()
 
 def save_to_database(data):
-    """将游戏数据保存到数据库中"""
+    """将一份 API 快照幂等地保存到数据库。"""
     try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        
-        # 当前时间作为数据收集时间
-        collected_at = datetime.now().isoformat()
-        
-        # 保存游戏基本信息
-        for game in data.get('playHistories', []):
-            # 插入或更新游戏记录
-            cursor.execute('''
-            INSERT OR REPLACE INTO games (title_id, title_name, image_url, device_type)
-            VALUES (?, ?, ?, ?)
-            ''', (
-                game.get('titleId'), 
-                game.get('titleName'), 
-                game.get('imageUrl'),
-                game.get('deviceType')
-            ))
-            
-            # 保存游戏历史记录
-            cursor.execute('''
-            INSERT INTO game_history (
-                title_id, first_played_at, last_played_at, 
-                total_played_days, total_played_minutes, collected_at
-            ) VALUES (?, ?, ?, ?, ?, ?)
-            ''', (
-                game.get('titleId'),
-                game.get('firstPlayedAt'),
-                game.get('lastPlayedAt'),
-                game.get('totalPlayedDays'),
-                game.get('totalPlayedMinutes'),
-                collected_at
-            ))
-        
-        # 保存每日游玩记录
-        for day_record in data.get('recentPlayHistories', []):
-            played_date = day_record.get('playedDate')
-            
-            for game in day_record.get('dailyPlayHistories', []):
-                # 只保存有游玩时间的记录
-                if game.get('totalPlayedMinutes', 0) > 0:
-                    cursor.execute('''
-                    INSERT INTO daily_play (title_id, played_date, played_minutes, collected_at)
-                    VALUES (?, ?, ?, ?)
-                    ''', (
-                        game.get('titleId'),
-                        played_date,
-                        game.get('totalPlayedMinutes'),
-                        collected_at
-                    ))
-        
-        conn.commit()
-        
-        # 检查game_translations表是否存在，不存在则创建
-        cursor.execute('''
-        SELECT name FROM sqlite_master WHERE type='table' AND name='game_translations'
-        ''')
-        if not cursor.fetchone():
-            cursor.execute('''
-            CREATE TABLE IF NOT EXISTS game_translations (
-                title_id TEXT PRIMARY KEY,
-                japanese_name TEXT,
-                chinese_name TEXT
-            )
-            ''')
-            conn.commit()
-            logger.info("创建了game_translations表")
-        
-        # 尝试更新中文名称，如果表存在
-        try:
-            cursor.execute('''
-            UPDATE games 
-            SET chinese_name = (
-                SELECT t.chinese_name 
-                FROM game_translations t 
-                WHERE t.title_id = games.title_id
-            )
-            WHERE EXISTS (
-                SELECT 1 
-                FROM game_translations t 
-                WHERE t.title_id = games.title_id
-            )
-            ''')
-            
-            # 检查是否有未翻译的游戏
-            cursor.execute('''
-            SELECT COUNT(*) 
-            FROM games 
-            WHERE chinese_name IS NULL OR chinese_name = ''
-            ''')
-            untranslated_count = cursor.fetchone()[0]
-            
-            conn.commit()
-            
-            # 打印信息并检查未翻译的游戏
-            if untranslated_count > 0:
-                print(f"发现 {untranslated_count} 个未翻译的游戏，可以运行 'python game_translation.py' 导出并翻译")
-            
-        except Exception as e:
-            logger.warning(f"更新中文名称时出错: {str(e)}")
-            # 错误不中断程序流程，继续执行
-        
-        conn.close()
-        logger.info(f"数据已成功保存到数据库")
+        collected_at = datetime.now(timezone.utc).isoformat()
+        save_play_data(data, collected_at, DB_FILE)
         return True
-    except Exception as e:
-        logger.error(f"保存数据到数据库失败: {str(e)}")
+    except Exception as exc:
+        logger.exception("保存数据到数据库失败: %s", exc)
         return False
 
 def get_game_list_with_cn_names():
     """获取游戏列表，优先使用中文名称"""
     try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        
-        # 确保表存在
-        tables_needed = ['games', 'game_history']
-        for table in tables_needed:
-            cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table}'")
-            if not cursor.fetchone():
-                logger.warning(f"表 {table} 不存在，将创建")
-                init_database()
-                # 如果刚创建表，可能还没有数据
-                return []
-        
-        # 使用明确的表名前缀避免歧义
-        cursor.execute('''
+        init_database(DB_FILE)
+        with connect(DB_FILE) as conn:
+            cursor = conn.execute('''
         SELECT games.title_id, 
                CASE WHEN games.chinese_name IS NOT NULL AND games.chinese_name != '' 
                     THEN games.chinese_name 
@@ -229,37 +63,35 @@ def get_game_list_with_cn_names():
         LIMIT 10
         ''')
         
-        games = cursor.fetchall()
-        conn.close()
-        
+            games = cursor.fetchall()
         return games
     except Exception as e:
         logger.error(f"获取游戏列表失败: {str(e)}")
         return []
 
-class nsession:
+class NintendoSession:
  
     def __init__(self, client_id='5c38e31cd085304b') -> None:
         self.session = requests.Session()
         self.client_id = client_id
         self.ua = 'com.nintendo.znej/1.13.0 (Android/7.1.2)'
-        self.config_dir = 'config'
-        self.token_file = os.path.join(self.config_dir, 'tokens.json')
+        self.config_dir = PROJECT_ROOT / "config"
+        self.token_file = self.config_dir / "tokens.json"
         self.timeout = 30  # 请求超时时间（秒）
         self.load_tokens()
  
     def load_tokens(self):
         """从配置文件加载已保存的 token"""
-        if not os.path.exists(self.config_dir):
+        if not self.config_dir.exists():
             try:
-                os.makedirs(self.config_dir)
+                self.config_dir.mkdir(parents=True, mode=0o700)
             except OSError as e:
                 logger.error(f"创建配置目录失败: {str(e)}")
                 return False
             
-        if os.path.exists(self.token_file):
+        if self.token_file.exists():
             try:
-                with open(self.token_file, 'r') as f:
+                with self.token_file.open("r", encoding="utf-8") as f:
                     tokens = json.load(f)
                     self.session_token = tokens.get('session_token')
                     self.access_token = tokens.get('access_token')
@@ -291,11 +123,12 @@ class nsession:
             }
             
             # 确保目录存在
-            if not os.path.exists(self.config_dir):
-                os.makedirs(self.config_dir)
-                
-            with open(self.token_file, 'w') as f:
-                json.dump(tokens, f)
+            self.config_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            temporary_file = self.token_file.with_suffix(".tmp")
+            with temporary_file.open("w", encoding="utf-8") as file_handle:
+                json.dump(tokens, file_handle)
+            os.chmod(temporary_file, stat.S_IRUSR | stat.S_IWUSR)
+            temporary_file.replace(self.token_file)
             return True
         except Exception as e:
             logger.error(f"保存 token 失败: {str(e)}")
@@ -390,15 +223,16 @@ class nsession:
                 if use_account_url.lower() == "skip":
                     return "skip"
                     
-                session_token_code_match = re.search(r'session_token_code=([^&]+)', use_account_url)
-                if not session_token_code_match:
+                parsed_query = parse_qs(urlparse(use_account_url).query)
+                session_token_codes = parsed_query.get("session_token_code", [])
+                if not session_token_codes:
                     print("URL格式不正确，请确保包含'session_token_code'参数")
                     attempt += 1
                     if attempt < max_attempts:
                         print(f"请重新输入 (尝试 {attempt}/{max_attempts}):")
                     continue
                     
-                session_token_code = session_token_code_match.group(1)
+                session_token_code = session_token_codes[0]
                 result = self.get_session_token(session_token_code, auth_code_verifier)
                 if result is None:
                     print("\nToken 可能已过期，请重新运行程序获取新的链接")
@@ -446,7 +280,7 @@ class nsession:
                 
             response_data = json.loads(r.text)
             if 'session_token' not in response_data:
-                logger.error(f"响应中未找到 session_token")
+                logger.error("响应中未找到 session_token")
                 return None
                 
             self.session_token = response_data['session_token']
@@ -490,7 +324,7 @@ class nsession:
             logger.error(f"获取访问令牌失败: {str(e)}")
             return None
  
-    def get_history(self):
+    def get_history(self, archive_json=False):
         '''获取游戏历史记录'''
         if not hasattr(self, 'access_token') or not self.access_token:
             logger.error("缺少访问令牌，无法获取游戏历史记录")
@@ -505,24 +339,16 @@ class nsession:
             r = self.session.get(url, headers=header, timeout=self.timeout)
             
             if r.status_code == 200:
-                # 创建保存目录
-                save_dir = 'history_data'
                 try:
-                    if not os.path.exists(save_dir):
-                        os.makedirs(save_dir)
-                    
-                    # 生成文件名（使用时间戳）
-                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                    filename = f'history_{timestamp}.json'
-                    filepath = os.path.join(save_dir, filename)
-                    
-                    # 获取响应数据
                     data = r.json()
-                    
-                    # 保存数据到JSON文件
-                    with open(filepath, 'w', encoding='utf-8') as f:
-                        json.dump(data, f, ensure_ascii=False, indent=2)
-                    print(f"历史记录已保存到: {filepath}")
+                    if archive_json:
+                        save_dir = PROJECT_ROOT / "history_data"
+                        save_dir.mkdir(parents=True, exist_ok=True)
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        filepath = save_dir / f"history_{timestamp}.json"
+                        with filepath.open("w", encoding="utf-8") as file_handle:
+                            json.dump(data, file_handle, ensure_ascii=False, indent=2)
+                        print(f"历史记录已保存到: {filepath}")
                     
                     # 保存数据到数据库
                     if save_to_database(data):
@@ -535,7 +361,7 @@ class nsession:
                     if games:
                         history_count = len(games)
                         print(f"\n共找到 {history_count} 条游戏记录")
-                        for i, (title_id, display_name, days) in enumerate(games[:5]):  # 显示前5条记录
+                        for _, display_name, days in games[:5]:  # 显示前5条记录
                             print(f"- {display_name}: {days} 天")
                 except Exception as e:
                     logger.error(f"保存历史记录失败: {str(e)}")
@@ -544,9 +370,9 @@ class nsession:
                 logger.warning("访问令牌已失效，需要重新登录")
                 print("token 已失效，需要重新登录")
                 # 删除失效的 token
-                if os.path.exists(self.token_file):
+                if self.token_file.exists():
                     try:
-                        os.remove(self.token_file)
+                        self.token_file.unlink()
                     except OSError as e:
                         logger.error(f"删除 token 文件失败: {str(e)}")
                 return None
@@ -561,16 +387,21 @@ class nsession:
             print(f"请求失败: {str(e)}")
             return None
  
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="收集 Nintendo Switch 游玩记录")
+    parser.add_argument(
+        "--archive-json",
+        action="store_true",
+        help="将 API 原始响应额外保存到 history_data/（默认仅写入数据库）",
+    )
+    args = parser.parse_args(argv)
     try:
         print("Nintendo Switch 游戏记录追踪工具")
         
         # 初始化数据库
-        if not init_database():
-            print("初始化数据库失败，程序将退出")
-            return
+        init_database(DB_FILE)
             
-        ns = nsession()
+        ns = NintendoSession()
         
         # 修改逻辑：先检查是否有session_token（长期有效），无论access_token是否有效
         if hasattr(ns, 'session_token') and ns.session_token:
@@ -580,37 +411,42 @@ def main():
                 access_token = ns.get_access_token()
                 if not access_token:
                     print("刷新访问令牌失败")
-                    return
+                    return 1
         else:
             # 没有session_token，需要完整登录流程
             session_token = ns.log_in()
             if not session_token:
                 print("登录失败")
-                return
+                return 1
                 
             if session_token == "skip":
                 print("已跳过登录")
-                return
+                return 0
                 
             access_token = ns.get_access_token()
             if not access_token:
                 print("获取访问令牌失败")
-                return
+                return 1
         
         # 获取游戏历史
         if hasattr(ns, 'access_token') and ns.access_token:
-            r = ns.get_history()
+            r = ns.get_history(archive_json=args.archive_json)
             if not r:
                 print("获取游戏历史记录失败")
+                return 1
         else:
             print("缺少访问令牌，无法获取游戏历史记录")
+            return 1
             
         print("程序执行完成")
+        return 0
     except KeyboardInterrupt:
         print("\n程序已被用户中断")
+        return 130
     except Exception as e:
         logger.error(f"程序发生未捕获的异常: {str(e)}", exc_info=True)
         print(f"程序发生错误: {str(e)}")
+        return 1
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

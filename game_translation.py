@@ -1,26 +1,32 @@
 import csv
-import sqlite3
-import os
 import logging
+import os
+import sqlite3
+from pathlib import Path
+
+from tracker_db import database_path, init_database
+
+PROJECT_ROOT = Path(__file__).resolve().parent
 
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("switch_tracker.log"),
+        logging.FileHandler(PROJECT_ROOT / "switch_tracker.log", encoding="utf-8"),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger("game_translation")
 
 # 数据库配置
-DB_FILE = 'switch_tracker.db'
-TRANSLATION_CSV = 'game_translations.csv'
+DB_FILE = database_path()
+TRANSLATION_CSV = PROJECT_ROOT / "game_translations.csv"
 
 def init_translation_table():
     """初始化游戏翻译表结构"""
     try:
+        init_database(DB_FILE)
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         
@@ -103,7 +109,7 @@ def export_untranslated_games():
             
         # 备份现有的翻译文件
         if os.path.exists(TRANSLATION_CSV):
-            backup_file = f"{TRANSLATION_CSV}.bak"
+            backup_file = TRANSLATION_CSV.with_suffix(".csv.bak")
             try:
                 os.replace(TRANSLATION_CSV, backup_file)
                 logger.info(f"已将现有翻译文件备份为: {backup_file}")
@@ -112,9 +118,10 @@ def export_untranslated_games():
         
         # 读取现有翻译
         existing_translations = {}
-        if os.path.exists(f"{TRANSLATION_CSV}.bak"):
+        backup_file = TRANSLATION_CSV.with_suffix(".csv.bak")
+        if os.path.exists(backup_file):
             try:
-                with open(f"{TRANSLATION_CSV}.bak", 'r', newline='', encoding='utf-8') as f:
+                with open(backup_file, 'r', newline='', encoding='utf-8') as f:
                     reader = csv.reader(f)
                     next(reader)  # 跳过标题行
                     for row in reader:
@@ -140,7 +147,7 @@ def export_untranslated_games():
                     untranslated_count += 1
         
         print(f"已导出 {untranslated_count} 个未翻译的游戏到 {TRANSLATION_CSV}")
-        print(f"请编辑该文件添加中文翻译，然后运行 'python game_translation.py import' 导入翻译")
+        print("请编辑该文件添加中文翻译，然后运行 'python game_translation.py import' 导入翻译")
         return True
     except Exception as e:
         logger.error(f"导出未翻译游戏失败: {str(e)}")
@@ -272,4 +279,4 @@ def main():
         export_untranslated_games()
         
 if __name__ == "__main__":
-    main() 
+    main()
