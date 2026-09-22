@@ -109,6 +109,7 @@ python game_translation.py import
 ```
 
 导入时会同步更新数据库，无需额外执行 `apply`；为兼容旧用法，`apply` 命令仍然可用。
+若要清除翻译，请保留该行并将 `chinese_name` 留空，然后重新导入；页面会恢复显示原名。CSV 中未列出的游戏不会被修改。
 
 ## 配置
 
@@ -168,6 +169,7 @@ python -m pip install -r requirements-dev.txt
 ruff check .
 pytest
 node --check script.js
+node --test tests/frontend.test.cjs
 ```
 
 测试使用临时数据库，不会读取或修改真实令牌与个人游玩数据。项目结构：

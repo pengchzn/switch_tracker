@@ -109,6 +109,7 @@ python game_translation.py import
 ```
 
 Importing updates the database immediately. The legacy `apply` command remains available for compatibility.
+To remove a translation, keep its CSV row and leave `chinese_name` empty, then import again. The dashboard falls back to the original name. Games omitted from the CSV are unchanged.
 
 ## Configuration
 
@@ -168,6 +169,7 @@ python -m pip install -r requirements-dev.txt
 ruff check .
 pytest
 node --check script.js
+node --test tests/frontend.test.cjs
 ```
 
 Tests use temporary databases and do not read or modify real tokens or personal play data. Key files include:

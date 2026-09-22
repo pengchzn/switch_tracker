@@ -96,7 +96,7 @@ def export_untranslated_games():
         SELECT g.title_id, g.title_name 
         FROM games g
         LEFT JOIN game_translations t ON g.title_id = t.title_id
-        WHERE t.title_id IS NULL
+        WHERE t.title_id IS NULL OR COALESCE(TRIM(t.chinese_name), '') = ''
         ORDER BY g.title_name
         ''')
         
@@ -121,12 +121,12 @@ def export_untranslated_games():
         backup_file = TRANSLATION_CSV.with_suffix(".csv.bak")
         if os.path.exists(backup_file):
             try:
-                with open(backup_file, 'r', newline='', encoding='utf-8') as f:
+                with open(backup_file, 'r', newline='', encoding='utf-8-sig') as f:
                     reader = csv.reader(f)
                     next(reader)  # 跳过标题行
                     for row in reader:
-                        if len(row) >= 3 and row[0] and row[2]:
-                            existing_translations[row[0]] = (row[1], row[2])
+                        if len(row) >= 3 and row[0].strip() and row[2].strip():
+                            existing_translations[row[0].strip()] = (row[1], row[2].strip())
             except Exception as e:
                 logger.warning(f"读取现有翻译失败: {str(e)}")
         
@@ -163,12 +163,14 @@ def import_translations_from_csv():
     try:
         # 读取CSV文件
         translations = []
-        with open(TRANSLATION_CSV, 'r', newline='', encoding='utf-8') as f:
+        with open(TRANSLATION_CSV, 'r', newline='', encoding='utf-8-sig') as f:
             reader = csv.reader(f)
             next(reader)  # 跳过标题行
             for row in reader:
-                if len(row) >= 3 and row[0] and row[2]:  # 确保有title_id和chinese_name
-                    translations.append((row[0], row[1], row[2]))
+                # A present row with an empty name explicitly clears a translation.
+                # Missing or incomplete rows leave existing translations untouched.
+                if len(row) >= 3 and row[0].strip():
+                    translations.append((row[0].strip(), row[1], row[2].strip()))
         
         if not translations:
             print("没有找到有效的翻译记录")
